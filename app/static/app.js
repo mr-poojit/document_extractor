@@ -200,13 +200,63 @@ function appendHighlightedText(container, text, query) {
   }
 }
 
+function getDisplayBlocks(blocks) {
+  const displayBlocks = [];
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index];
+    const isStyledListItem =
+      block.type === "list_item" ||
+      /^List (Bullet|Number)/i.test(block.style || "");
+    if (isStyledListItem) {
+      displayBlocks.push({
+        ...block,
+        type: "list_item",
+        list_kind: block.list_kind || (/^List Number/i.test(block.style || "") ? "number" : "bullet"),
+      });
+      continue;
+    }
+
+    const nextBlock = blocks[index + 1];
+    const marker = block.type === "paragraph" ? block.text.trim() : "";
+    const markerBox = block.bbox;
+    const nextBox = nextBlock?.bbox;
+    const isStandaloneBullet = /^[•●▪◦‣⁃·*]$/.test(marker);
+    const nearbyNextBlock =
+      markerBox?.length === 4 &&
+      nextBox?.length === 4 &&
+      Math.abs(markerBox[0] - nextBox[0]) <= 48 &&
+      nextBox[1] - markerBox[3] <= 48 &&
+      nextBox[1] - markerBox[3] >= -(markerBox[3] - markerBox[1]);
+    const nextIsListItem =
+      nextBlock?.type === "list_item" ||
+      (nextBlock?.type === "paragraph" && /^List (Bullet|Number)/i.test(nextBlock.style || ""));
+    if (
+      isStandaloneBullet &&
+      nextBlock?.type === "paragraph" &&
+      nearbyNextBlock &&
+      !nextIsListItem
+    ) {
+      displayBlocks.push({
+        ...nextBlock,
+        type: "list_item",
+        list_kind: "bullet",
+        marker,
+      });
+      index += 1;
+      continue;
+    }
+    displayBlocks.push(block);
+  }
+  return displayBlocks;
+}
+
 function renderContent(data, query) {
   const container = document.querySelector("#content-view");
   container.replaceChildren();
   let matches = 0;
   const pages = data.file_type === "pdf" ? data.blocks : [{ page: null, blocks: data.blocks }];
   for (const page of pages) {
-    const visibleBlocks = page.blocks.filter((block) => {
+    const visibleBlocks = getDisplayBlocks(page.blocks).filter((block) => {
       const searchable = block.type === "table" ? block.rows.flat().join(" ") : block.text;
       const matched = !query || searchable.toLowerCase().includes(query.toLowerCase());
       if (matched && query) matches += 1;
@@ -222,8 +272,12 @@ function renderContent(data, query) {
       label.textContent = `Page ${page.page}`;
       section.append(label);
     }
+    let activeList = null;
+    let activeListKind = null;
     for (const block of visibleBlocks) {
       if (block.type === "table") {
+        activeList = null;
+        activeListKind = null;
         const wrapper = document.createElement("div");
         wrapper.className = "table-wrap";
         const table = document.createElement("table");
@@ -239,7 +293,20 @@ function renderContent(data, query) {
         }
         wrapper.append(table);
         section.append(wrapper);
+      } else if (block.type === "list_item") {
+        const listKind = block.list_kind === "number" ? "number" : "bullet";
+        if (activeListKind !== listKind) {
+          activeList = document.createElement(listKind === "number" ? "ol" : "ul");
+          activeList.className = "content-list";
+          section.append(activeList);
+          activeListKind = listKind;
+        }
+        const item = document.createElement("li");
+        appendHighlightedText(item, block.text, query);
+        activeList.append(item);
       } else {
+        activeList = null;
+        activeListKind = null;
         const paragraph = document.createElement("p");
         paragraph.className = "content-block";
         appendHighlightedText(paragraph, block.text, query);

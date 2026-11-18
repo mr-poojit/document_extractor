@@ -26,6 +26,8 @@ def make_docx() -> bytes:
     table.cell(0, 1).text = "Revenue"
     table.cell(1, 0).text = "Q1"
     table.cell(1, 1).text = "$10"
+    document.add_paragraph("First list item", style="List Bullet")
+    document.add_paragraph("Second list item", style="List Bullet")
     output = BytesIO()
     document.save(output)
     return output.getvalue()
@@ -35,6 +37,18 @@ def make_pdf(text: str = "Invoice 1042\nAmount due: $25.00") -> bytes:
     document = fitz.open()
     page = document.new_page()
     page.insert_text((72, 72), text)
+    output = document.tobytes()
+    document.close()
+    return output
+
+
+def make_split_bullet_pdf() -> bytes:
+    document = fitz.open()
+    page = document.new_page()
+    page.insert_text((72, 100), "*", fontsize=12)
+    page.insert_text((72, 121), "First list item wraps naturally.", fontsize=12)
+    page.insert_text((72, 155), "*", fontsize=12)
+    page.insert_text((72, 176), "Second list item stays separate.", fontsize=12)
     output = document.tobytes()
     document.close()
     return output
@@ -64,6 +78,7 @@ def test_docx_preserves_paragraph_and_table_content() -> None:
     assert result["blocks"][0]["text"] == "Quarterly report"
     assert result["blocks"][2]["type"] == "table"
     assert result["blocks"][2]["rows"][1] == ["Q1", "$10"]
+    assert [block["type"] for block in result["blocks"][3:]] == ["list_item", "list_item"]
     assert "Revenue increased." in result["full_text"]
     assert "Quarter\tRevenue\nQ1\t$10" in result["full_text"]
 
@@ -75,6 +90,18 @@ def test_pdf_returns_text_in_page_order() -> None:
     assert result["page_count"] == 1
     assert "Invoice 1042" in result["full_text"]
     assert "Amount due: $25.00" in result["full_text"]
+
+
+def test_pdf_attaches_separate_bullet_markers_to_their_text() -> None:
+    result = extract_document("bullets.pdf", make_split_bullet_pdf())
+    blocks = result["blocks"][0]["blocks"]
+
+    assert [block["type"] for block in blocks] == ["list_item", "list_item"]
+    assert [block["text"] for block in blocks] == [
+        "First list item wraps naturally.",
+        "Second list item stays separate.",
+    ]
+    assert all(block["marker"] == "*" for block in blocks)
 
 
 def test_pdf_detects_tabular_content() -> None:

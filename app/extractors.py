@@ -15,6 +15,8 @@ from docx.table import Table
 from docx.text.paragraph import Paragraph
 from lxml.etree import XMLSyntaxError
 
+_BULLET_MARKERS = frozenset({"•", "●", "▪", "◦", "‣", "⁃", "·", "*"})
+
 
 class DocumentExtractionError(ValueError):
     """Raised when a supported file cannot be safely or usefully extracted."""
@@ -27,12 +29,19 @@ def _docx_blocks(document: DocxDocument) -> list[dict[str, Any]]:
             paragraph = Paragraph(item, document)
             text = paragraph.text.strip()
             if text:
+                style_name = paragraph.style.name if paragraph.style else None
+                list_kind = None
+                if style_name and style_name.startswith("List Bullet"):
+                    list_kind = "bullet"
+                elif style_name and style_name.startswith("List Number"):
+                    list_kind = "number"
                 blocks.append(
                     {
-                        "type": "paragraph",
+                        "type": "list_item" if list_kind else "paragraph",
                         "order": order,
                         "text": text,
-                        "style": paragraph.style.name if paragraph.style else None,
+                        "style": style_name,
+                        **({"list_kind": list_kind} if list_kind else {}),
                     }
                 )
         elif isinstance(item, CT_Tbl):
@@ -123,11 +132,44 @@ def _extract_pdf(data: bytes) -> dict[str, Any]:
                     )
                 )
             has_text = has_text or bool(positioned_blocks)
+            ordered_blocks = sorted(positioned_blocks, key=lambda item: (item[0], item[1]))
             page_blocks = []
-            for order, (_, _, block) in enumerate(
-                sorted(positioned_blocks, key=lambda item: (item[0], item[1]))
-            ):
-                page_blocks.append({**block, "order": order})
+            index = 0
+            while index < len(ordered_blocks):
+                _, _, block = ordered_blocks[index]
+                if (
+                    block["type"] == "paragraph"
+                    and block["text"] in _BULLET_MARKERS
+                    and index + 1 < len(ordered_blocks)
+                ):
+                    bullet_bbox = block["bbox"]
+                    next_block = ordered_blocks[index + 1][2]
+                    next_bbox = next_block.get("bbox", [])
+                    line_height = max(1.0, bullet_bbox[3] - bullet_bbox[1])
+                    horizontal_distance = (
+                        abs(bullet_bbox[0] - next_bbox[0]) if len(next_bbox) == 4 else float("inf")
+                    )
+                    vertical_gap = (
+                        next_bbox[1] - bullet_bbox[3] if len(next_bbox) == 4 else float("inf")
+                    )
+                    if (
+                        next_block["type"] == "paragraph"
+                        and horizontal_distance <= 48
+                        and -line_height <= vertical_gap <= max(48, line_height * 3)
+                    ):
+                        page_blocks.append(
+                            {
+                                **next_block,
+                                "type": "list_item",
+                                "list_kind": "bullet",
+                                "marker": block["text"],
+                                "order": len(page_blocks),
+                            }
+                        )
+                        index += 2
+                        continue
+                page_blocks.append({**block, "order": len(page_blocks)})
+                index += 1
             pages.append({"page": page_number, "blocks": page_blocks})
 
     if not pages:
