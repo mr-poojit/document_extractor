@@ -9,10 +9,11 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
-from app.extractors import DocumentExtractionError, extract_document
+from app.extractors import DocumentExtractionError, extract_document_with_previews
 from app.storage import (
     delete_document,
     get_document,
+    get_document_page,
     initialize_database,
     list_documents,
     save_document,
@@ -66,8 +67,10 @@ async def extract(file: UploadFile = File(...)) -> dict:
         await file.close()
 
     try:
-        extracted = await run_in_threadpool(extract_document, filename, bytes(content))
-        return await run_in_threadpool(save_document, extracted)
+        extracted, page_images = await run_in_threadpool(
+            extract_document_with_previews, filename, bytes(content)
+        )
+        return await run_in_threadpool(save_document, extracted, page_images)
     except DocumentExtractionError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -87,6 +90,21 @@ async def document(document_id: str) -> dict:
     if saved_document is None:
         raise HTTPException(status_code=404, detail="Saved document not found.")
     return saved_document
+
+
+@app.get("/api/documents/{document_id}/pages/{page_number}", tags=["documents"])
+async def document_page(document_id: str, page_number: int) -> Response:
+    if page_number < 1:
+        raise HTTPException(status_code=404, detail="Saved page preview not found.")
+    page_preview = await run_in_threadpool(get_document_page, document_id, page_number)
+    if page_preview is None:
+        raise HTTPException(status_code=404, detail="Saved page preview not found.")
+    image_data, media_type = page_preview
+    return Response(
+        content=image_data,
+        media_type=media_type,
+        headers={"Cache-Control": "private, max-age=86400"},
+    )
 
 
 @app.delete(

@@ -17,6 +17,7 @@ def _connect() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(DB_PATH, timeout=10)
     connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys = ON")
     connection.execute("PRAGMA busy_timeout = 10000")
     return connection
 
@@ -49,14 +50,36 @@ def initialize_database() -> None:
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_documents_saved_at ON documents(saved_at DESC)"
         )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS document_pages (
+                document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+                page_number INTEGER NOT NULL CHECK (page_number > 0),
+                media_type TEXT NOT NULL,
+                image_data BLOB NOT NULL,
+                PRIMARY KEY (document_id, page_number)
+            )
+            """
+        )
 
 
-def save_document(document: dict[str, Any]) -> dict[str, Any]:
+def save_document(
+    document: dict[str, Any], page_images: list[bytes] | None = None
+) -> dict[str, Any]:
+    page_images = page_images or []
     saved_document = {
         **document,
         "id": str(uuid.uuid4()),
         "saved_at": datetime.now(timezone.utc).isoformat(),
     }
+    document_id = saved_document["id"]
+    saved_document["page_previews"] = [
+        {
+            "page": page_number,
+            "url": f"/api/documents/{document_id}/pages/{page_number}",
+        }
+        for page_number in range(1, len(page_images) + 1)
+    ]
     with _connection() as connection:
         connection.execute(
             """
@@ -71,6 +94,16 @@ def save_document(document: dict[str, Any]) -> dict[str, Any]:
                 saved_document["full_text"],
                 json.dumps(saved_document, ensure_ascii=False, separators=(",", ":")),
             ),
+        )
+        connection.executemany(
+            """
+            INSERT INTO document_pages (document_id, page_number, media_type, image_data)
+            VALUES (?, ?, 'image/jpeg', ?)
+            """,
+            [
+                (document_id, page_number, image_data)
+                for page_number, image_data in enumerate(page_images, start=1)
+            ],
         )
     return saved_document
 
@@ -119,6 +152,20 @@ def get_document(document_id: str) -> dict[str, Any] | None:
             "SELECT json_data FROM documents WHERE id = ?", (document_id,)
         ).fetchone()
     return json.loads(row["json_data"]) if row else None
+
+
+def get_document_page(
+    document_id: str, page_number: int
+) -> tuple[bytes, str] | None:
+    with _connection() as connection:
+        row = connection.execute(
+            """
+            SELECT image_data, media_type FROM document_pages
+            WHERE document_id = ? AND page_number = ?
+            """,
+            (document_id, page_number),
+        ).fetchone()
+    return (bytes(row["image_data"]), row["media_type"]) if row else None
 
 
 def delete_document(document_id: str) -> bool:

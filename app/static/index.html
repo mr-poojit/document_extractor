@@ -67,11 +67,13 @@
             <span id="search-count" class="search-count"></span>
           </label>
           <div class="tabs" role="tablist" aria-label="Result view">
-            <button class="tab active" id="content-tab" role="tab" aria-selected="true" aria-controls="content-view" type="button">Document</button>
+            <button class="tab" id="original-tab" role="tab" aria-selected="false" aria-controls="original-view" type="button" hidden>Original pages</button>
+            <button class="tab" id="content-tab" role="tab" aria-selected="false" aria-controls="content-view" type="button">Extracted text</button>
             <button class="tab" id="json-tab" role="tab" aria-selected="false" aria-controls="json-view" type="button">JSON</button>
           </div>
         </div>
 
+        <div id="original-view" class="result-panel original-panel" role="tabpanel" aria-labelledby="original-tab" hidden></div>
         <div id="content-view" class="result-panel" role="tabpanel" aria-labelledby="content-tab"></div>
         <section id="json-view" class="result-panel json-panel" role="tabpanel" aria-labelledby="json-tab" hidden>
           <div class="json-actions"><span>Structured extraction output</span><button id="copy-button" class="text-button" type="button">Copy JSON</button></div>
@@ -79,7 +81,7 @@
         </section>
       </section>
 
-      <p class="privacy-note"><span aria-hidden="true">◈</span> Extracted JSON is saved in the local SQLite database. Original document files are not retained.</p>
+      <p class="privacy-note"><span aria-hidden="true">◈</span> Extracted JSON and PDF page previews are saved in SQLite. Original uploaded files are not retained.</p>
     </main>
     <footer><span>DocuLens</span><span>Built for clear, transparent extraction.</span></footer>
     <script src="/static/app.js" defer></script>

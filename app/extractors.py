@@ -73,7 +73,7 @@ def _extract_docx(data: bytes) -> dict[str, Any]:
     return {"blocks": blocks, "page_count": None}
 
 
-def _extract_pdf(data: bytes) -> dict[str, Any]:
+def _extract_pdf(data: bytes, include_page_previews: bool = False) -> dict[str, Any]:
     try:
         document = fitz.open(stream=data, filetype="pdf")
     except (fitz.FileDataError, RuntimeError) as exc:
@@ -83,8 +83,17 @@ def _extract_pdf(data: bytes) -> dict[str, Any]:
         if document.needs_pass:
             raise DocumentExtractionError("This PDF is password-protected and cannot be extracted.")
         pages: list[dict[str, Any]] = []
+        page_previews: list[bytes] = []
         has_text = False
         for page_number, page in enumerate(document, start=1):
+            if include_page_previews:
+                scale = min(2.0, 1400 / page.rect.width, 1800 / page.rect.height)
+                pixmap = page.get_pixmap(
+                    matrix=fitz.Matrix(scale, scale),
+                    alpha=False,
+                    annots=True,
+                )
+                page_previews.append(pixmap.tobytes("jpeg", jpg_quality=82))
             positioned_blocks: list[tuple[float, float, dict[str, Any]]] = []
             detected_tables = page.find_tables().tables
             table_boxes = []
@@ -178,11 +187,16 @@ def _extract_pdf(data: bytes) -> dict[str, Any]:
         raise DocumentExtractionError(
             "No selectable text was found. This may be a scanned PDF; OCR is not enabled."
         )
-    return {"blocks": pages, "page_count": len(pages)}
+    return {
+        "blocks": pages,
+        "page_count": len(pages),
+        "page_previews": page_previews,
+    }
 
 
-def extract_document(filename: str, data: bytes) -> dict[str, Any]:
-    """Extract ordered document content into a stable, JSON-serializable shape."""
+def _extract_document(
+    filename: str, data: bytes, include_page_previews: bool
+) -> tuple[dict[str, Any], list[bytes]]:
     suffix = PurePosixPath(filename.replace("\\", "/")).suffix.lower()
     if suffix not in {".pdf", ".docx"}:
         raise DocumentExtractionError("Only PDF and DOCX files are supported.")
@@ -192,7 +206,7 @@ def extract_document(filename: str, data: bytes) -> dict[str, Any]:
     if suffix == ".pdf":
         if not data.startswith(b"%PDF-"):
             raise DocumentExtractionError("The file extension is PDF, but its contents are not.")
-        result = _extract_pdf(data)
+        result = _extract_pdf(data, include_page_previews)
         file_type = "pdf"
     else:
         if not data.startswith(b"PK"):
@@ -219,11 +233,23 @@ def extract_document(filename: str, data: bytes) -> dict[str, Any]:
             for block in page["blocks"]
         )
 
-    return {
-        "schema_version": "1.0",
+    document_result = {
+        "schema_version": "1.1",
         "filename": PurePosixPath(filename.replace("\\", "/")).name,
         "file_type": file_type,
         "page_count": result["page_count"],
         "blocks": result["blocks"],
         "full_text": full_text,
     }
+    return document_result, result.get("page_previews", [])
+
+
+def extract_document(filename: str, data: bytes) -> dict[str, Any]:
+    """Extract ordered document content into a JSON-serializable shape."""
+    result, _ = _extract_document(filename, data, include_page_previews=False)
+    return result
+
+
+def extract_document_with_previews(filename: str, data: bytes) -> tuple[dict[str, Any], list[bytes]]:
+    """Extract document content and rendered JPEG page previews for persistence."""
+    return _extract_document(filename, data, include_page_previews=True)

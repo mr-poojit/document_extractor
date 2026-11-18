@@ -42,6 +42,21 @@ def make_pdf(text: str = "Invoice 1042\nAmount due: $25.00") -> bytes:
     return output
 
 
+def make_visual_pdf() -> bytes:
+    document = fitz.open()
+    page = document.new_page()
+    page.insert_text((72, 72), "A chart and embedded image")
+    page.draw_line((72, 120), (180, 120), width=2)
+    page.draw_line((72, 120), (72, 190), width=2)
+    page.draw_line((72, 190), (180, 135), color=(0, 0, 1), width=2)
+    pixmap = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 24, 24), False)
+    pixmap.clear_with(0xCC3333)
+    page.insert_image(fitz.Rect(220, 100, 280, 160), pixmap=pixmap)
+    output = document.tobytes()
+    document.close()
+    return output
+
+
 def make_split_bullet_pdf() -> bytes:
     document = fitz.open()
     page = document.new_page()
@@ -162,11 +177,38 @@ def test_api_extracts_docx_upload(client: TestClient) -> None:
     )
 
     assert response.status_code == 200
-    assert response.json()["schema_version"] == "1.0"
+    assert response.json()["schema_version"] == "1.1"
     assert response.json()["id"]
     assert response.json()["saved_at"]
     assert response.json()["filename"] == "report.docx"
     assert response.json()["blocks"][2]["type"] == "table"
+    assert response.json()["page_previews"] == []
+
+
+def test_pdf_page_preview_is_saved_and_served(client: TestClient) -> None:
+    source_pdf = make_visual_pdf()
+    with fitz.open(stream=source_pdf, filetype="pdf") as source:
+        assert len(source[0].get_images()) == 1
+        assert len(source[0].get_drawings()) >= 3
+    response = client.post(
+        "/api/extract",
+        files={"file": ("paper.pdf", source_pdf, "application/pdf")},
+    )
+
+    assert response.status_code == 200
+    saved = response.json()
+    assert saved["page_count"] == 1
+    assert saved["page_previews"] == [
+        {"page": 1, "url": f"/api/documents/{saved['id']}/pages/1"}
+    ]
+
+    preview = client.get(saved["page_previews"][0]["url"])
+    assert preview.status_code == 200
+    assert preview.headers["content-type"] == "image/jpeg"
+    assert preview.content.startswith(b"\xff\xd8")
+
+    assert client.delete(f"/api/documents/{saved['id']}").status_code == 204
+    assert client.get(saved["page_previews"][0]["url"]).status_code == 404
 
 
 def test_saved_json_can_be_searched_retrieved_and_deleted(client: TestClient) -> None:

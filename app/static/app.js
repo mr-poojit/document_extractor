@@ -68,9 +68,32 @@ function renderResult(data) {
     `${data.file_type.toUpperCase()} · ${data.page_count === null ? "page count unavailable" : `${data.page_count} page${data.page_count === 1 ? "" : "s"}`}${data.saved_at ? ` · Saved ${formatDate(data.saved_at)}` : ""}`;
   document.querySelector("#delete-current-button").hidden = !data.id;
   document.querySelector("#json-output").textContent = JSON.stringify(data, null, 2);
+  renderOriginalPages(data.page_previews || []);
   renderContent(data, "");
   results.hidden = false;
-  setActiveTab("content");
+  setActiveTab(data.page_previews?.length ? "original" : "content");
+}
+
+function renderOriginalPages(pagePreviews) {
+  const container = document.querySelector("#original-view");
+  container.replaceChildren();
+  const hasPagePreviews = pagePreviews.length > 0;
+  document.querySelector("#original-tab").hidden = !hasPagePreviews;
+  if (!hasPagePreviews) return;
+
+  for (const preview of pagePreviews) {
+    const figure = document.createElement("figure");
+    figure.className = "original-page";
+    const caption = document.createElement("figcaption");
+    caption.textContent = `Page ${preview.page}`;
+    const image = document.createElement("img");
+    image.src = preview.url;
+    image.alt = `Original PDF page ${preview.page}`;
+    image.loading = "lazy";
+    image.decoding = "async";
+    figure.append(caption, image);
+    container.append(figure);
+  }
 }
 
 function formatDate(value) {
@@ -329,14 +352,18 @@ searchInput.addEventListener("input", () => {
 });
 
 function setActiveTab(tabName) {
-  const isJson = tabName === "json";
-  document.querySelector("#content-tab").classList.toggle("active", !isJson);
-  document.querySelector("#content-tab").setAttribute("aria-selected", String(!isJson));
-  document.querySelector("#json-tab").classList.toggle("active", isJson);
-  document.querySelector("#json-tab").setAttribute("aria-selected", String(isJson));
-  document.querySelector("#content-view").hidden = isJson;
-  document.querySelector("#json-view").hidden = !isJson;
+  for (const [tab, panel, name] of [
+    ["original-tab", "original-view", "original"],
+    ["content-tab", "content-view", "content"],
+    ["json-tab", "json-view", "json"],
+  ]) {
+    const isActive = tabName === name;
+    document.querySelector(`#${tab}`).classList.toggle("active", isActive);
+    document.querySelector(`#${tab}`).setAttribute("aria-selected", String(isActive));
+    document.querySelector(`#${panel}`).hidden = !isActive;
+  }
 }
+document.querySelector("#original-tab").addEventListener("click", () => setActiveTab("original"));
 document.querySelector("#content-tab").addEventListener("click", () => setActiveTab("content"));
 document.querySelector("#json-tab").addEventListener("click", () => setActiveTab("json"));
 
