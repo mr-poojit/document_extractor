@@ -51,7 +51,7 @@ python -m pytest
     {
       "page": 1,
       "blocks": [
-        { "type": "paragraph", "order": 0, "text": "Quarterly report", "bbox": [40, 50, 300, 75] },
+        { "type": "paragraph", "order": 0, "text": "1. Quarterly report", "question_number": 1, "bbox": [40, 50, 300, 75] },
         { "type": "table", "order": 1, "rows": [["Quarter", "Revenue"], ["Q1", "$10"]] }
       ]
     }
@@ -60,7 +60,9 @@ python -m pytest
 }
 ```
 
-DOCX page count is `null` because the format does not encode stable rendered page boundaries; pagination depends on the word processor and layout. PDF output groups text blocks by page and includes their bounding boxes; tables detected by PyMuPDF are represented as row/cell arrays. Its `page_previews` point to stored JPEG renderings of the original pages, preserving diagrams, charts, numbering, and layout. The extracted-text and JSON views remain searchable, while Original pages shows the visual page.
+DOCX page count is `null` because the format does not encode stable rendered page boundaries; pagination depends on the word processor and layout. PDF output groups text blocks by page and includes their bounding boxes; detected question numbers are also exposed as `question_number` fields. Ruled tables detected by PyMuPDF are represented as row/cell arrays only when their cells account for the underlying text; otherwise the original text blocks are kept to avoid silently dropping content. Its `page_previews` point to stored JPEG renderings of the original pages, preserving diagrams, charts, numbering, and layout. The page shows Original pages for the source layout and Extracted text for the structured content, which stays searchable. The raw JSON is stored in SQLite and can be downloaded; it is not rendered on the page.
+
+PDF previews use a 1.4x render scale and JPEG quality 78 to reduce upload wait and database size while keeping page text readable. The 23-page sample PDF completed extraction and preview generation in about 0.9 seconds locally; actual time depends on file complexity and hardware.
 
 ## Saved document API
 
@@ -84,4 +86,4 @@ DOCX page count is `null` because the format does not encode stable rendered pag
 - **SQLite** for persistent, searchable JSON history without storing original uploads.
 - **PyMuPDF** for PDF text blocks, page ordering, and geometry.
 - **python-docx** for ordered DOCX paragraphs and tables.
-- **Vanilla HTML/CSS/JavaScript** for a compact, dependency-free frontend with document preview, search, JSON inspection, copy, and download.
+- **Vanilla HTML/CSS/JavaScript** for a compact, dependency-free frontend with document preview, extracted-text search, and JSON download.

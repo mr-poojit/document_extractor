@@ -83,6 +83,7 @@ h1 span { color: var(--accent); }
 .page-label { margin-bottom: 12px; color: #969caf; font-size: 10px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; }
 .content-block { margin: 0 0 14px; color: #394256; font-size: 13px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
 .content-block:last-child { margin-bottom: 0; }
+.question-number { display: inline-block; min-width: 24px; margin-right: 7px; color: var(--ink); font-weight: 700; }
 .content-block mark { color: inherit; background: #fff0b7; border-radius: 2px; }
 .content-list { margin: 0 0 14px; padding-left: 22px; color: #394256; font-size: 13px; line-height: 1.8; }
 .content-list li { margin-bottom: 8px; padding-left: 3px; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -92,9 +93,6 @@ h1 span { color: var(--accent); }
 .content-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .content-table td, .content-table th { padding: 8px 10px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
 .content-table tr:first-child { background: #f7f7fb; font-weight: 600; }
-.json-panel { padding: 0; }
-.json-actions { padding: 12px 17px; display: flex; justify-content: space-between; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 11px; }
-.json-panel pre { margin: 0; padding: 18px; overflow: auto; color: #334058; font: 11px/1.65 "Cascadia Code", Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .privacy-note { margin: 26px 0 47px; text-align: center; }
 .privacy-note span { margin-right: 5px; color: var(--accent); }
 footer { min-height: 55px; display: flex; justify-content: space-between; padding: 17px max(calc((100vw - 1060px) / 2), 24px); border-top: 1px solid #e9ebf2; color: #969caf; font-size: 10px; }

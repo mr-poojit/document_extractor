@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import re
+import unicodedata
+from collections import Counter
 from io import BytesIO
 from pathlib import PurePosixPath
 from typing import Any
@@ -16,10 +19,47 @@ from docx.text.paragraph import Paragraph
 from lxml.etree import XMLSyntaxError
 
 _BULLET_MARKERS = frozenset({"•", "●", "▪", "◦", "‣", "⁃", "·", "*"})
+_QUESTION_NUMBER = re.compile(r"^\s*(\d{1,2})\.\s*")
 
 
 class DocumentExtractionError(ValueError):
     """Raised when a supported file cannot be safely or usefully extracted."""
+
+
+def _text_tokens(text: str) -> Counter[str]:
+    normalized = unicodedata.normalize("NFKC", text).casefold()
+    return Counter(re.findall(r"\w+", normalized, flags=re.UNICODE))
+
+
+def _table_covers_text(rows: list[list[str]], text_blocks: list[str]) -> bool:
+    if not text_blocks:
+        return False
+    table_tokens = _text_tokens(" ".join(cell for row in rows for cell in row))
+    return all(not (_text_tokens(text) - table_tokens) for text in text_blocks)
+
+
+def _has_ruled_table_grid(page: fitz.Page) -> bool:
+    horizontal_lines = 0
+    vertical_lines = 0
+    for drawing in page.get_drawings():
+        for item in drawing["items"]:
+            if item[0] != "l":
+                continue
+            start, end = item[1], item[2]
+            width = abs(start.x - end.x)
+            height = abs(start.y - end.y)
+            if width >= 20 and height < 1.5:
+                horizontal_lines += 1
+            elif height >= 20 and width < 1.5:
+                vertical_lines += 1
+    return horizontal_lines >= 3 and vertical_lines >= 2
+
+
+def _add_question_number(block: dict[str, Any]) -> dict[str, Any]:
+    match = _QUESTION_NUMBER.match(block.get("text", ""))
+    if not match:
+        return block
+    return {**block, "question_number": int(match.group(1))}
 
 
 def _docx_blocks(document: DocxDocument) -> list[dict[str, Any]]:
@@ -36,13 +76,13 @@ def _docx_blocks(document: DocxDocument) -> list[dict[str, Any]]:
                 elif style_name and style_name.startswith("List Number"):
                     list_kind = "number"
                 blocks.append(
-                    {
+                    _add_question_number({
                         "type": "list_item" if list_kind else "paragraph",
                         "order": order,
                         "text": text,
                         "style": style_name,
                         **({"list_kind": list_kind} if list_kind else {}),
-                    }
+                    })
                 )
         elif isinstance(item, CT_Tbl):
             table = Table(item, document)
@@ -87,16 +127,24 @@ def _extract_pdf(data: bytes, include_page_previews: bool = False) -> dict[str, 
         has_text = False
         for page_number, page in enumerate(document, start=1):
             if include_page_previews:
-                scale = min(2.0, 1400 / page.rect.width, 1800 / page.rect.height)
+                scale = min(1.4, 1100 / page.rect.width, 1500 / page.rect.height)
                 pixmap = page.get_pixmap(
                     matrix=fitz.Matrix(scale, scale),
                     alpha=False,
                     annots=True,
                 )
-                page_previews.append(pixmap.tobytes("jpeg", jpg_quality=82))
+                page_previews.append(pixmap.tobytes("jpeg", jpg_quality=78))
             positioned_blocks: list[tuple[float, float, dict[str, Any]]] = []
-            detected_tables = page.find_tables().tables
-            table_boxes = []
+            accepted_table_blocks: list[tuple[float, float, dict[str, Any], fitz.Rect]] = []
+            raw_blocks = [
+                raw
+                for raw in page.get_text("blocks", sort=True)
+                if len(raw) >= 7 and raw[6] == 0 and raw[4].strip()
+            ]
+            if _has_ruled_table_grid(page):
+                detected_tables = page.find_tables().tables
+            else:
+                detected_tables = []
             for table in detected_tables:
                 rows = [
                     [cell.strip() if cell else "" for cell in row]
@@ -104,28 +152,37 @@ def _extract_pdf(data: bytes, include_page_previews: bool = False) -> dict[str, 
                 ]
                 if not any(any(cell for cell in row) for row in rows):
                     continue
+                table_box = fitz.Rect(table.bbox)
+                covered_blocks = [
+                    raw
+                    for raw in raw_blocks
+                    if table_box.contains(
+                        fitz.Point((raw[0] + raw[2]) / 2, (raw[1] + raw[3]) / 2)
+                    )
+                ]
+                if not _table_covers_text(rows, [raw[4].strip() for raw in covered_blocks]):
+                    continue
                 bbox = [round(float(value), 2) for value in table.bbox]
-                table_boxes.append(table.bbox)
-                positioned_blocks.append(
+                accepted_table_blocks.append(
                     (
                         float(table.bbox[1]),
                         float(table.bbox[0]),
                         {"type": "table", "rows": rows, "bbox": bbox},
+                        table_box,
                     )
                 )
 
-            raw_blocks = page.get_text("blocks", sort=True)
+            accepted_table_boxes = [table[3] for table in accepted_table_blocks]
+            positioned_blocks.extend(
+                (table[0], table[1], table[2]) for table in accepted_table_blocks
+            )
             for raw in raw_blocks:
-                if len(raw) < 7 or raw[6] != 0:
-                    continue
                 text = raw[4].strip()
-                if not text:
-                    continue
-                center_x = (raw[0] + raw[2]) / 2
-                center_y = (raw[1] + raw[3]) / 2
                 if any(
-                    x0 <= center_x <= x1 and y0 <= center_y <= y1
-                    for x0, y0, x1, y1 in table_boxes
+                    table_box.contains(
+                        fitz.Point((raw[0] + raw[2]) / 2, (raw[1] + raw[3]) / 2)
+                    )
+                    for table_box in accepted_table_boxes
                 ):
                     continue
                 has_text = True
@@ -133,11 +190,11 @@ def _extract_pdf(data: bytes, include_page_previews: bool = False) -> dict[str, 
                     (
                         float(raw[1]),
                         float(raw[0]),
-                        {
+                        _add_question_number({
                             "type": "paragraph",
                             "text": text,
                             "bbox": [round(float(value), 2) for value in raw[:4]],
-                        },
+                        }),
                     )
                 )
             has_text = has_text or bool(positioned_blocks)
@@ -167,17 +224,19 @@ def _extract_pdf(data: bytes, include_page_previews: bool = False) -> dict[str, 
                         and -line_height <= vertical_gap <= max(48, line_height * 3)
                     ):
                         page_blocks.append(
-                            {
+                            _add_question_number({
                                 **next_block,
                                 "type": "list_item",
                                 "list_kind": "bullet",
                                 "marker": block["text"],
                                 "order": len(page_blocks),
-                            }
+                            })
                         )
                         index += 2
                         continue
-                page_blocks.append({**block, "order": len(page_blocks)})
+                page_blocks.append(
+                    _add_question_number({**block, "order": len(page_blocks)})
+                )
                 index += 1
             pages.append({"page": page_number, "blocks": page_blocks})
 

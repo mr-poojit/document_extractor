@@ -67,7 +67,6 @@ function renderResult(data) {
   document.querySelector("#document-meta").textContent =
     `${data.file_type.toUpperCase()} · ${data.page_count === null ? "page count unavailable" : `${data.page_count} page${data.page_count === 1 ? "" : "s"}`}${data.saved_at ? ` · Saved ${formatDate(data.saved_at)}` : ""}`;
   document.querySelector("#delete-current-button").hidden = !data.id;
-  document.querySelector("#json-output").textContent = JSON.stringify(data, null, 2);
   renderOriginalPages(data.page_previews || []);
   renderContent(data, "");
   results.hidden = false;
@@ -207,7 +206,7 @@ loadSavedDocuments();
 
 function appendHighlightedText(container, text, query) {
   if (!query) {
-    container.textContent = text;
+    container.append(document.createTextNode(text));
     return;
   }
   const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -230,6 +229,12 @@ function getDisplayBlocks(blocks) {
     const isStyledListItem =
       block.type === "list_item" ||
       /^List (Bullet|Number)/i.test(block.style || "");
+    const questionNumber = block.question_number ??
+      Number(block.text?.match(/^\s*(\d{1,2})\.\s*/)?.[1]);
+    if (Number.isInteger(questionNumber) && questionNumber > 0) {
+      displayBlocks.push({ ...block, question_number: questionNumber });
+      continue;
+    }
     if (isStyledListItem) {
       displayBlocks.push({
         ...block,
@@ -332,7 +337,18 @@ function renderContent(data, query) {
         activeListKind = null;
         const paragraph = document.createElement("p");
         paragraph.className = "content-block";
-        appendHighlightedText(paragraph, block.text, query);
+        const questionNumber = block.question_number;
+        const numberPrefix = questionNumber
+          ? new RegExp(`^\\s*${questionNumber}\\.\\s*`)
+          : null;
+        const questionText = numberPrefix ? block.text.replace(numberPrefix, "") : block.text;
+        if (questionNumber) {
+          const number = document.createElement("span");
+          number.className = "question-number";
+          number.textContent = `${questionNumber}.`;
+          paragraph.append(number);
+        }
+        appendHighlightedText(paragraph, questionText, query);
         section.append(paragraph);
       }
     }
@@ -355,7 +371,6 @@ function setActiveTab(tabName) {
   for (const [tab, panel, name] of [
     ["original-tab", "original-view", "original"],
     ["content-tab", "content-view", "content"],
-    ["json-tab", "json-view", "json"],
   ]) {
     const isActive = tabName === name;
     document.querySelector(`#${tab}`).classList.toggle("active", isActive);
@@ -365,7 +380,6 @@ function setActiveTab(tabName) {
 }
 document.querySelector("#original-tab").addEventListener("click", () => setActiveTab("original"));
 document.querySelector("#content-tab").addEventListener("click", () => setActiveTab("content"));
-document.querySelector("#json-tab").addEventListener("click", () => setActiveTab("json"));
 
 document.querySelector("#download-button").addEventListener("click", () => {
   if (!extractedDocument) return;
@@ -376,15 +390,4 @@ document.querySelector("#download-button").addEventListener("click", () => {
   link.download = `${extractedDocument.filename.replace(/\.[^.]+$/, "")}.json`;
   link.click();
   URL.revokeObjectURL(url);
-});
-document.querySelector("#copy-button").addEventListener("click", async (event) => {
-  if (!extractedDocument) return;
-  const button = event.currentTarget;
-  try {
-    await navigator.clipboard.writeText(JSON.stringify(extractedDocument, null, 2));
-    button.textContent = "Copied!";
-    setTimeout(() => { button.textContent = "Copy JSON"; }, 1500);
-  } catch {
-    button.textContent = "Copy unavailable";
-  }
 });

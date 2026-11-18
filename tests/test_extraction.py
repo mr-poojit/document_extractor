@@ -5,7 +5,11 @@ import pytest
 from docx import Document
 from fastapi.testclient import TestClient
 
-from app.extractors import DocumentExtractionError, extract_document
+from app.extractors import (
+    DocumentExtractionError,
+    _table_covers_text,
+    extract_document,
+)
 from app import storage
 from app.main import MAX_UPLOAD_BYTES, app
 
@@ -105,6 +109,25 @@ def test_pdf_returns_text_in_page_order() -> None:
     assert result["page_count"] == 1
     assert "Invoice 1042" in result["full_text"]
     assert "Amount due: $25.00" in result["full_text"]
+
+
+def test_pdf_question_number_is_preserved_as_a_field() -> None:
+    result = extract_document("question.pdf", make_pdf("12. Which answer is correct?"))
+    question = result["blocks"][0]["blocks"][0]
+
+    assert question["question_number"] == 12
+    assert question["text"].startswith("12.")
+
+
+def test_unfaithful_table_parse_does_not_replace_source_text() -> None:
+    assert not _table_covers_text(
+        [["What is the answer?"]],
+        ["Which question is missing from this parsed table?"],
+    )
+    assert _table_covers_text(
+        [["Quarter", "Revenue"], ["Q1", "$10"]],
+        ["Quarter Revenue", "Q1 $10"],
+    )
 
 
 def test_pdf_attaches_separate_bullet_markers_to_their_text() -> None:

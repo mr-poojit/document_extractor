@@ -7,7 +7,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Generator
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "data" / "doculens.sqlite3"
 DB_PATH = Path(os.environ.get("DOCULENS_DB_PATH", DEFAULT_DB_PATH)).expanduser()
@@ -23,7 +23,7 @@ def _connect() -> sqlite3.Connection:
 
 
 @contextmanager
-def _connection() -> Iterator[sqlite3.Connection]:
+def _connection() -> Generator[sqlite3.Connection, None, None]:
     connection = _connect()
     try:
         with connection:

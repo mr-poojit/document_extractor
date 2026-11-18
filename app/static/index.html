@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#f6f7fb" />
     <title>DocuLens — Document to JSON</title>
-    <link rel="stylesheet" href="/static/app.css" />
+    <link rel="stylesheet" href="/static/app.css?v=1.3" />
   </head>
   <body>
     <header class="topbar">
@@ -69,21 +69,16 @@
           <div class="tabs" role="tablist" aria-label="Result view">
             <button class="tab" id="original-tab" role="tab" aria-selected="false" aria-controls="original-view" type="button" hidden>Original pages</button>
             <button class="tab" id="content-tab" role="tab" aria-selected="false" aria-controls="content-view" type="button">Extracted text</button>
-            <button class="tab" id="json-tab" role="tab" aria-selected="false" aria-controls="json-view" type="button">JSON</button>
           </div>
         </div>
 
         <div id="original-view" class="result-panel original-panel" role="tabpanel" aria-labelledby="original-tab" hidden></div>
         <div id="content-view" class="result-panel" role="tabpanel" aria-labelledby="content-tab"></div>
-        <section id="json-view" class="result-panel json-panel" role="tabpanel" aria-labelledby="json-tab" hidden>
-          <div class="json-actions"><span>Structured extraction output</span><button id="copy-button" class="text-button" type="button">Copy JSON</button></div>
-          <pre><code id="json-output"></code></pre>
-        </section>
       </section>
 
       <p class="privacy-note"><span aria-hidden="true">◈</span> Extracted JSON and PDF page previews are saved in SQLite. Original uploaded files are not retained.</p>
     </main>
     <footer><span>DocuLens</span><span>Built for clear, transparent extraction.</span></footer>
-    <script src="/static/app.js" defer></script>
+    <script src="/static/app.js?v=1.3" defer></script>
   </body>
 </html>
